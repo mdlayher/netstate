@@ -62,8 +62,16 @@ func process(msgs []rtnetlink.Message) changeSet {
 		// TODO: also inspect other message types for addresses, routes, etc.
 		switch m := m.(type) {
 		case *rtnetlink.LinkMessage:
+			// TODO: inspect message header/type?
+
+			// Guard against nil.
+			if m.Attributes == nil {
+				continue
+			}
+
 			c, ok := operStateChange(m.Attributes.OperationalState)
 			if !ok {
+				// Unrecognized value, nothing to do.
 				continue
 			}
 
