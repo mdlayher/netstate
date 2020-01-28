@@ -1,3 +1,5 @@
+//+build linux
+
 package netstate_test
 
 import (
@@ -5,16 +7,15 @@ import (
 	"fmt"
 	"math/rand"
 	"os/exec"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/mdlayher/netstate"
+	"golang.org/x/sys/unix"
 )
 
-func TestWatcherWatch(t *testing.T) {
+func TestIntegrationWatcherWatch(t *testing.T) {
 	dummy, done := dummyInterface(t)
 	defer done()
 
@@ -45,7 +46,7 @@ func TestWatcherWatch(t *testing.T) {
 
 	// Trigger interface state changes and ensure events are received for
 	// those changes.
-	var got []netstate.Change
+	var changes []netstate.Change
 
 	for i := 0; i < 3; i++ {
 		// Alternate bringing the interface up and down.
@@ -55,33 +56,36 @@ func TestWatcherWatch(t *testing.T) {
 		}
 
 		shell(t, "ip", "link", "set", dir, dummy)
-		got = append(got, <-watchC)
+		changes = append(changes, <-watchC)
 	}
 
 	// Now that the changes have been received, stop the Watcher.
 	cancel()
 	wg.Wait()
 
+	// It's difficult for this test to be performed in a deterministic way, so
+	// just check for expected event types caused as a result of bringing the
+	// interface up and down.
+	//
 	// Interestingly, dummy interfaces appear to be set to state "unknown" when
 	// brought up, so check for that.
-	want := []netstate.Change{
-		netstate.LinkUnknown,
-		netstate.LinkDown,
-		netstate.LinkUnknown,
+	if len(changes) == 0 {
+		t.Fatal("no link changes were detected")
 	}
 
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("unexpected link changes (-want +got):\n%s", diff)
+	for _, c := range changes {
+		switch c {
+		case netstate.LinkDown, netstate.LinkUnknown:
+			// Expected change.
+			t.Logf("change: %q", c)
+		default:
+			t.Fatalf("unexpected link change: %q", c)
+		}
 	}
 }
 
 func dummyInterface(t *testing.T) (string, func()) {
 	t.Helper()
-
-	if runtime.GOOS != "linux" {
-		t.Skip("skipping, this test only runs on Linux")
-	}
-
 	skipUnprivileged(t)
 
 	var (
@@ -125,9 +129,7 @@ func shell(t *testing.T, name string, arg ...string) {
 
 	if err := cmd.Wait(); err != nil {
 		// Shell operations in these tests require elevated privileges.
-		// No real need to import unix when EPERM will never change.
-		const eperm = 0x1
-		if cmd.ProcessState.ExitCode() == eperm {
+		if cmd.ProcessState.ExitCode() == int(unix.EPERM) {
 			t.Skipf("skipping, permission denied: %v", err)
 		}
 
