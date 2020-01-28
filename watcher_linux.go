@@ -16,8 +16,8 @@ import (
 // the rtnetlink listener.
 var deadlineNow = time.Unix(0, 1)
 
-// watch is the OS-specific portion of Watch.
-func (w *Watcher) watch(ctx context.Context) error {
+// osWatch is the OS-specific portion of a Watcher's Watch method.
+func osWatch(ctx context.Context, notify func(changeSet)) error {
 	c, err := rtnetlink.Dial(&netlink.Config{
 		Groups: 0x1, // RTMGRP_LINK (TODO: move to x/sys).
 	})
@@ -50,7 +50,7 @@ func (w *Watcher) watch(ctx context.Context) error {
 		}
 
 		// Received messages; produce a changeSet and notify subscribers.
-		w.notify(process(msgs))
+		notify(process(msgs))
 	}
 }
 

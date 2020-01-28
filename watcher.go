@@ -26,6 +26,10 @@ type Watcher struct {
 	// Track Change subscribers.
 	mu sync.RWMutex
 	m  changeMap
+
+	// Swappable watch hook for testing. notify notifies subscribers that the
+	// input changes have occurred.
+	watch func(ctx context.Context, notify func(changes changeSet)) error
 }
 
 // NewWatcher creates a Watcher.
@@ -34,6 +38,9 @@ func NewWatcher() *Watcher {
 		watching: new(uint32),
 
 		m: make(changeMap),
+
+		// By default, watch using OS-specific primitives.
+		watch: osWatch,
 	}
 }
 
@@ -89,7 +96,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 	}()
 
 	// Call into OS-specific watching code.
-	return w.watch(ctx)
+	return w.watch(ctx, w.notify)
 }
 
 // notify accepts a changeSet of interfaces mapped to their Changes and notifies
